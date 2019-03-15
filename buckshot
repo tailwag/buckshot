@@ -1,0 +1,65 @@
+#!/usr/bin/python
+
+import os
+import re
+import sys
+import time
+import uuid
+import socket
+import hashlib
+import requests
+import subprocess
+import dns.resolver
+
+filePath = os.path.expanduser("~") + '/.buckshot'
+uuidGen = str(uuid.uuid4())
+epochTime = str(time.time())
+searchDom = sys.argv[1]
+
+border = '---------------'
+
+md5form = hashlib.md5()
+updateStr = str(uuidGen + epochTime + searchDom).encode('utf-8')
+md5form.update(updateStr)
+
+md5out = str(md5form.hexdigest())[:6]
+
+topBorder = ' '.join(['\n', border, md5out, searchDom, epochTime.split(".")[0], border, '\n']) 
+
+logFile = open(filePath, "a+")
+logFile.write(topBorder)
+logFile.close()
+
+wget = 'wget -a ' + filePath + ' --delete-after --random-wait -nv -pE -U "buckshot site tester a0.0.1" ' + searchDom
+
+result = subprocess.Popen(wget, stdout=subprocess.PIPE, shell=True).communicate()[0]
+
+with open(filePath) as readFile:
+    shotlog = readFile.read().splitlines()
+
+logStart = [i for i, x in enumerate(shotlog) if x[1:16] == border]
+
+if len(logStart) != 0:
+    curLog = shotlog[logStart[-1]:]
+    pageReqs = list(filter(re.compile(r'URL:[^ ]*').search, curLog))
+
+for req in pageReqs:
+    logFile = open(filePath, "a+")
+    request = req.split(' ')[2].replace("URL:", "")
+    get = requests.get(request)
+    logFile.write('|'.join(['%pagereq%', str(get.status_code), request]) + '\n')
+    logFile.close()
+
+DNS = ['A', 'CNAME', 'NS', 'MX', 'SOA', 'TXT']
+DNSlist = []
+for recType in DNS:
+    try:
+        for rdata in dns.resolver.query(searchDom, recType) :
+            DNSlist.append("%dnsrec%" + "|" + recType + "|" + str(rdata))
+    except:
+        dnerr = True
+
+for recOut in DNSlist:
+    logFile = open(filePath, "a+")
+    logFile.write(recOut + '\n')
+    logFile.close()
