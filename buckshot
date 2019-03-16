@@ -28,7 +28,8 @@ def getMonth (monthIn):
             'Dec' : "12"
     }[monthIn]
 
-def addNulls (intIn):
+def addNulls (strIn):
+    intIn = int(strIn)
     if intIn < 10:
         return 0 + intIn
     else:
@@ -55,7 +56,12 @@ logFile.close()
 
 wget = 'wget -a ' + filePath + ' --delete-after --random-wait -nv -pE -U "buckshot site tester a0.0.1" ' + searchDom
 
+curl = 'curl -LIs -w "%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
+
 result = subprocess.Popen(wget, stdout=subprocess.PIPE, shell=True).communicate()[0]
+result = subprocess.Popen(curl, stdout=subprocess.PIPE, shell=True).communicate()[0]
+
+print(result)
 
 with open(filePath) as readFile:
     shotlog = readFile.read().splitlines()
@@ -66,6 +72,11 @@ if len(logStart) != 0:
     curLog = shotlog[logStart[-1]:]
     pageReqs = list(filter(re.compile(r'URL:[^ ]*').search, curLog))
     pageErrs = list(filter(re.compile(r'^https?://[^:]*').search, curLog))
+    loadTime = list(filter(re.compile(r'Total wall clock time.*').search, curLog))
+
+    loadSec = loadTime[-1].split(' ')[-1]
+    logFile = open(filePath, "a+")
+    logFile.write("|".join(['%getstat%', 'total', loadSec]) + '\n')
 
 for req in pageReqs:
     logFile = open(filePath, "a+")
@@ -108,6 +119,7 @@ for line in x509lst:
     if re.match(r'Issuer\s?:.*', stripped):
         left  = 'issuer'
         right = ':'.join(stripped.split(":")[1:])
+
     if re.match(r'Not Before\s?:.*', stripped):
         left  = 'startdate'
         fullna = ':'.join(stripped.split(":")[1:]).lstrip()
@@ -124,6 +136,7 @@ for line in x509lst:
 
         dattim = year + month + day + time
         right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
+
     if re.match(r'Not After\s?:.*', stripped):
         left  = 'expiration'
         fullna = ':'.join(stripped.split(":")[1:]).lstrip()
@@ -140,6 +153,10 @@ for line in x509lst:
 
         dattim = year + month + day + time
         right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
+    
+    if re.match(r'Subject\s?:.*', stripped):
+        left  = 'subject'
+        right = ':'.join(stripped.split(":")[1:])
 
     if re.match(r'DNS:[^,]*', stripped):
         dnsList = stripped.split(', ')
@@ -156,5 +173,5 @@ for line in x509lst:
         logFile.close()
         right = False
 
-for line in x509lst:
-    print(line.decode('utf-8'))
+#for line in x509lst:
+#    print(line.decode('utf-8'))
