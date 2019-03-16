@@ -9,8 +9,9 @@ import socket
 import hashlib
 import datetime
 import requests
+import argparse
 import subprocess
-import dns.resolver
+from dns.resolver import query
 
 def getMonth (monthIn):
     return{
@@ -39,207 +40,257 @@ filePath = os.path.expanduser("~") + '/.buckshot'
 uuidGen = str(uuid.uuid4())
 epochTime = str(time.time())
 searchDom = sys.argv[1]
-
 border = '---------------'
 
-md5form = hashlib.md5()
-updateStr = str(uuidGen + epochTime + searchDom).encode('utf-8')
-md5form.update(updateStr)
-
-md5out = str(md5form.hexdigest())[:6]
-
-topBorder = ' '.join(['\n', border, md5out, searchDom, epochTime.split(".")[0], border, '\n']) 
-
-logFile = open(filePath, "a+")
-logFile.write(topBorder)
-logFile.close()
-
-wget = 'wget -a ' + filePath + ' --delete-after --random-wait -nv -pE -U "buckshot site tester a0.0.1" ' + searchDom
-
-curl = 'curl -LIs -w "%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
-
-result = subprocess.Popen(wget, stdout=subprocess.PIPE, shell=True).communicate()[0]
-result = subprocess.Popen(curl, stdout=subprocess.PIPE, shell=True).communicate()[0]
-
-with open(filePath) as readFile:
-    shotlog = readFile.read().splitlines()
-
-logStart = [i for i, x in enumerate(shotlog) if x[1:16] == border]
-
-if len(logStart) != 0:
-    curLog = shotlog[logStart[-1]:]
-    pageReqs = list(filter(re.compile(r'URL:[^ ]*').search, curLog))
-    pageErrs = list(filter(re.compile(r'^https?://[^:]*').search, curLog))
-    loadTime = list(filter(re.compile(r'Total wall clock time.*').search, curLog))
-
-    loadSec = loadTime[-1].split(' ')[-1]
-    logFile = open(filePath, "a+")
-    logFile.write("|".join(['%getstat%', 'full', loadSec]) + '\n')
-
-for req in pageReqs:
-    logFile = open(filePath, "a+")
-    request = req.split(' ')[2].replace("URL:", "")
-    logFile.write('|'.join(['%pagereq%', '200', request]) + '\n')
-    logFile.close()
-
-for err in pageErrs:
-    errReq  = [i for i, x in enumerate(curLog) if x == err]
-    errOut  = ":".join(err.split(":")[0:2])
-    errLine = curLog[errReq[0] + 1]
-    errCode = errLine.split(' ')[3].replace(":", "")
-    logFile = open(filePath, "a+")
-    logFile.write('|'.join(['%pagereq%', errCode, errOut]) + '\n')
-    logFile.close()
-
-DNS = ['A', 'CNAME', 'NS', 'MX', 'SOA', 'TXT']
-DNSlist = []
-dnsDom = searchDom.replace("https://", "").replace("http://", "").split('/')[0]
-for recType in DNS:
-    try:
-        for rdata in dns.resolver.query(dnsDom, recType) :
-            DNSlist.append("%dnsrqst%" + "|" + recType + "|" + str(rdata))
-    except:
-        dnerr = True
-
-for recOut in DNSlist:
-    logFile = open(filePath, "a+")
-    logFile.write(recOut + '\n')
-    logFile.close()
-
-osslDom = searchDom.replace("http://", "").replace("https://", "").split("/")[0]
-osslCom = 'openssl s_client -showcerts -servername ' + osslDom + ' -connect ' + osslDom + ':443 < /dev/null 2>&1 | openssl x509 -text'
-x509raw = subprocess.Popen(osslCom, stdout=subprocess.PIPE, shell=True).communicate()[0]
-x509lst = x509raw.splitlines()
-
-logFile = open(filePath, "a+")
-for line in x509lst:
-    stripped = line.lstrip().decode('utf-8')
-    if re.match(r'Issuer\s?:.*', stripped):
-        left  = 'issuer'
-        right = ':'.join(stripped.split(":")[1:])
-
-    if re.match(r'Not Before\s?:.*', stripped):
-        left  = 'startdate'
-        fullna = ':'.join(stripped.split(":")[1:]).lstrip()
-        one, two, thr, fou, fiv = fullna.split(" ")[0:5]
-        month = str(getMonth(one))
-        if two == '':
-            day  = str(addNulls(thr))
-            time = str(fou.replace(":", ""))
-            year = str(fiv)
-        else:
-            day  = str(two)
-            time = str(thr.replace(":", ""))
-            year = str(fou)
-
-        dattim = year + month + day + time
-        right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
-
-    if re.match(r'Not After\s?:.*', stripped):
-        left  = 'expiration'
-        fullna = ':'.join(stripped.split(":")[1:]).lstrip()
-        one, two, thr, fou, fiv = fullna.split(" ")[0:5]
-        month = str(getMonth(one))
-        if two == '':
-            day  = str(addNulls(thr))
-            time = str(fou.replace(":", ""))
-            year = str(fiv)
-        else:
-            day  = str(two)
-            time = str(thr.replace(":", ""))
-            year = str(fou)
-
-        dattim = year + month + day + time
-        right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
+def __fire (searchDom):
+    md5form = hashlib.md5()
+    updateStr = str(uuidGen + epochTime + searchDom).encode('utf-8')
+    md5form.update(updateStr)
     
-    if re.match(r'Subject\s?:.*', stripped):
-        left  = 'subject'
-        right = ':'.join(stripped.split(":")[1:])
-
-    if re.match(r'DNS:[^,]*', stripped):
-        dnsList = stripped.split(', ')
+    md5out = str(md5form.hexdigest())[:6]
+    
+    topBorder = ' '.join(['\n', border, md5out, searchDom, epochTime.split(".")[0], border, '\n']) 
+    
+    logFile = open(filePath, "a+")
+    logFile.write(topBorder)
+    logFile.close()
+    
+    wget = 'wget -a ' + filePath + ' --delete-after --random-wait -nv -pE -U "buckshot site tester a0.0.1" ' + searchDom
+    
+    curl = 'curl -LIs -w "%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
+    
+    result = subprocess.Popen(wget, stdout=subprocess.PIPE, shell=True).communicate()[0]
+    result = subprocess.Popen(curl, stdout=subprocess.PIPE, shell=True).communicate()[0]
+    
+    with open(filePath) as readFile:
+        shotlog = readFile.read().splitlines()
+    
+    logStart = [i for i, x in enumerate(shotlog) if x[1:16] == border]
+    
+    if len(logStart) != 0:
+        curLog = shotlog[logStart[-1]:]
+        pageReqs = list(filter(re.compile(r'URL:[^ ]*').search, curLog))
+        pageErrs = list(filter(re.compile(r'^https?://[^:]*').search, curLog))
+        loadTime = list(filter(re.compile(r'Total wall clock time.*').search, curLog))
+    
+        loadSec = loadTime[-1].split(' ')[-1]
         logFile = open(filePath, "a+")
-        for dns in dnsList:
-            san = dns.split(":")[-1]
-            logFile.write("|".join(['%openssl%', 'san', san]) + '\n')
+        logFile.write("|".join(['%getstat%', 'full', loadSec]) + '\n')
+    
+    for req in pageReqs:
+        logFile = open(filePath, "a+")
+        request = req.split(' ')[2].replace("URL:", "")
+        logFile.write('|'.join(['%pagereq%', '200', request]) + '\n')
         logFile.close()
+    
+    for err in pageErrs:
+        errReq  = [i for i, x in enumerate(curLog) if x == err]
+        errOut  = ":".join(err.split(":")[0:2])
+        errLine = curLog[errReq[0] + 1]
+        errCode = errLine.split(' ')[3].replace(":", "")
+        logFile = open(filePath, "a+")
+        logFile.write('|'.join(['%pagereq%', errCode, errOut]) + '\n')
+        logFile.close()
+    
+    DNS = ['A', 'CNAME', 'NS', 'MX', 'SOA', 'TXT']
+    DNSlist = []
+    dnsDom = searchDom.replace("https://", "").replace("http://", "").split('/')[0]
+    for recType in DNS:
+        try:
+            for rdata in query(dnsDom, recType):
+                DNSlist.append("%dnsrqst%" + "|" + recType + "|" + str(rdata))
+        except:
+            dnerr = True
+    
+    for recOut in DNSlist:
+        logFile = open(filePath, "a+")
+        logFile.write(recOut + '\n')
+        logFile.close()
+    
+    osslDom = searchDom.replace("http://", "").replace("https://", "").split("/")[0]
+    osslCom = 'openssl s_client -showcerts -servername ' + osslDom + ' -connect ' + osslDom + ':443 < /dev/null 2>&1 | openssl x509 -text'
+    x509raw = subprocess.Popen(osslCom, stdout=subprocess.PIPE, shell=True).communicate()[0]
+    x509lst = x509raw.splitlines()
+    
+    logFile = open(filePath, "a+")
+    for line in x509lst:
+        stripped = line.lstrip().decode('utf-8')
+        if re.match(r'Issuer\s?:.*', stripped):
+            left  = 'issuer'
+            right = ':'.join(stripped.split(":")[1:])
+    
+        if re.match(r'Not Before\s?:.*', stripped):
+            left  = 'startdate'
+            fullna = ':'.join(stripped.split(":")[1:]).lstrip()
+            one, two, thr, fou, fiv = fullna.split(" ")[0:5]
+            month = str(getMonth(one))
+            if two == '':
+                day  = str(addNulls(thr))
+                time = str(fou.replace(":", ""))
+                year = str(fiv)
+            else:
+                day  = str(two)
+                time = str(thr.replace(":", ""))
+                year = str(fou)
+    
+            dattim = year + month + day + time
+            right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
+    
+        if re.match(r'Not After\s?:.*', stripped):
+            left  = 'expiration'
+            fullna = ':'.join(stripped.split(":")[1:]).lstrip()
+            one, two, thr, fou, fiv = fullna.split(" ")[0:5]
+            month = str(getMonth(one))
+            if two == '':
+                day  = str(addNulls(thr))
+                time = str(fou.replace(":", ""))
+                year = str(fiv)
+            else:
+                day  = str(two)
+                time = str(thr.replace(":", ""))
+                year = str(fou)
+    
+            dattim = year + month + day + time
+            right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
         
-
-    if 'right' in locals() and right:
-        logFile = open(filePath, "a+")
-        logFile.write("|".join(["%openssl%", left, right]) + '\n')
-        logFile.close()
-        right = False
-
-#for line in x509lst:
-#    print(line.decode('utf-8'))
-
-
-
-
-with open(filePath) as readFile:
-    shotlog  = readFile.read().splitlines()
-    inputLog = shotlog[logStart[-1]:]
-    logDict = {'getstat': {'path':   [], 'connect':   [], 'redirect':   [], 'ttfb':    [], 'total': [], 'full': []},
-               'pagereq': {'200':    [], '301':       [], '302':        [], '401':     [], '403':   [], '404':  [], '500': [], '503': []},
-               'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':      [], 'SOA':   [], 'TXT':  []},
-               'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject': [], 'san':   []}}
-
-
-    for prikey in logDict.keys():
-        for seckey in logDict[prikey].keys():
-            results = list(filter(re.compile(r'%'+prikey+'%\|'+seckey+'\|.*').match, inputLog))
-            if len(results) != 0:
-                for apnd in results:
-                    logDict[prikey][seckey].append(apnd.replace("%"+prikey+"%|"+seckey+"|", ""))
+        if re.match(r'Subject\s?:.*', stripped):
+            left  = 'subject'
+            right = ':'.join(stripped.split(":")[1:])
+    
+        if re.match(r'DNS:[^,]*', stripped):
+            dnsList = stripped.split(', ')
+            logFile = open(filePath, "a+")
+            for dns in dnsList:
+                san = dns.split(":")[-1]
+                logFile.write("|".join(['%openssl%', 'san', san]) + '\n')
+            logFile.close()
+            
+    
+        if 'right' in locals() and right:
+            logFile = open(filePath, "a+")
+            logFile.write("|".join(["%openssl%", left, right]) + '\n')
+            logFile.close()
+            right = False
+    return md5out
 
 
-epoch = epochTime.split(".")[0]
-localtime = datetime.datetime.fromtimestamp(int(epoch)).strftime('%Y-%m-%d %H:%M:%S')
-print("\033[1;31m" + md5out + "\033[0m - \033[1;37m" + localtime + "\033[0m - \033[1;35m" + searchDom + "\033[0m") 
-print('\n')
-print("  \033[0;35m==)\033[0m Connection Statistics:\033[0m")
-for stat in logDict['getstat'].keys():
-    left = "    " + stat.capitalize()
-    for value in logDict['getstat'][stat]:
-        print("%-15s:  %2s" % (left, value))
-        left = ""
-print('\n')
-print("  \033[0;35m==)\033[0m DNS Information:\033[0m")
-for rcrd in logDict['dnsrqst'].keys():
-    if len(logDict['dnsrqst'][rcrd]) != 0:
-        left = "        " + rcrd
-        for res in logDict['dnsrqst'][rcrd]:
-            print("%-15s:  %2s" % (left, res))
-            left = ""
-print('\n')
-print("  \033[0;35m==)\033[0m Page Requisites:\033[0m")
-ncol = '\033[0m'
-for preq in logDict['pagereq'].keys():
-    pcol = {'200': "\033[1;32m", '301': "\033[1;34m", '302': "\033[1;34m", 
-            '401': "\033[1;31m", '403': "\033[1;31m", '404': "\033[1;31m",
-            '500': "\033[1;37m", '503': "\033[1;33m"}
-    ncol = '\033[0m'
-    left =  str("        " + pcol[preq] + preq + ncol)
-    for value in logDict['pagereq'][preq]:
-        print("%-26s:  %2s" % (left, value))
-print('\n')
-print("  \033[0;35m==)\033[0m SSL Information:\033[0m")
-for test in logDict['openssl'].keys():
-    if len(logDict['openssl'][test]) != 0:
-        left = "    " + test.capitalize().replace("San", "SANs")
-        if test == 'issuer' or test == 'subject':
-            preForm = re.split(r'[A-Z]{1,2}\s?=', logDict['openssl'][test][-1])
-            second  = preForm.pop().lstrip()
-            first   = " ".join(preForm).lstrip()
-            print("%-15s:  %2s" % ("    " + test.capitalize(), first))
-            print("%-15s:  %2s" % ('', second))
-        elif test == 'startdate' or test == 'expiration':
-            right = datetime.datetime.fromtimestamp(int(logDict['openssl'][test][-1])).strftime('%Y-%m-%d %H:%M:%S')
-            left  = "    " + test.capitalize()
-            print("%-15s:  %2s" % (left, right))
-
+def __parse (testid):
+    with open(filePath) as readFile:
+        shotlog  = readFile.read().splitlines()
+        tests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
+        found = [i for i, x in enumerate(tests) if shotlog[x].split(' ')[2] == testid]
+        if len(tests) > (found[0] + 1):
+            inputLog = shotlog[tests[found[0]]:(tests[found[0] + 1])]
         else:
-            for res in logDict['openssl'][test]:
+            inputLog = shotlog[tests[found[0]]:]
+
+        testId, domain, epoch = inputLog[0].split(' ')[2:5]
+        localtime = datetime.datetime.fromtimestamp(int(epoch)).strftime('%Y-%m-%d %H:%M:%S')
+        
+        logDict = {'getstat': {'path':   [], 'connect':   [], 'redirect':   [], 'ttfb':    [], 'total': [], 'full': []},
+                   'pagereq': {'200':    [], '301':       [], '302':        [], '401':     [], '403':   [], '404':  [], '500': [], '503': []},
+                   'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':      [], 'SOA':   [], 'TXT':  []},
+                   'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject': [], 'san':   []}}
+    
+        for prikey in logDict.keys():
+            for seckey in logDict[prikey].keys():
+                results = list(filter(re.compile(r'%'+prikey+'%\|'+seckey+'\|.*').match, inputLog))
+                if len(results) != 0:
+                    for apnd in results:
+                        logDict[prikey][seckey].append(apnd.replace("%"+prikey+"%|"+seckey+"|", ""))
+    
+    print("\033[1;31m" + testId + "\033[0m - \033[1;37m" + localtime + "\033[0m - \033[1;35m" + domain + "\033[0m") 
+    print('\n')
+    print("  \033[0;35m==)\033[0m Connection Statistics:\033[0m")
+    for stat in logDict['getstat'].keys():
+        left = "    " + stat.capitalize()
+        for value in logDict['getstat'][stat]:
+            print("%-15s:  %2s" % (left, value))
+            left = ""
+    print('\n')
+    print("  \033[0;35m==)\033[0m DNS Information:\033[0m")
+    for rcrd in logDict['dnsrqst'].keys():
+        if len(logDict['dnsrqst'][rcrd]) != 0:
+            left = "        " + rcrd
+            for res in logDict['dnsrqst'][rcrd]:
                 print("%-15s:  %2s" % (left, res))
                 left = ""
+    print('\n')
+    print("  \033[0;35m==)\033[0m Page Requisites:\033[0m")
+    ncol = '\033[0m'
+    for preq in logDict['pagereq'].keys():
+        pcol = {'200': "\033[1;32m", '301': "\033[1;34m", '302': "\033[1;34m", 
+                '401': "\033[1;31m", '403': "\033[1;31m", '404': "\033[1;31m",
+                '500': "\033[1;37m", '503': "\033[1;33m"}
+        ncol = '\033[0m'
+        left =  str("        " + pcol[preq] + preq + ncol)
+        for value in logDict['pagereq'][preq]:
+            print("%-26s:  %2s" % (left, value))
+    print('\n')
+    print("  \033[0;35m==)\033[0m SSL Information:\033[0m")
+    for test in logDict['openssl'].keys():
+        if len(logDict['openssl'][test]) != 0:
+            left = "    " + test.capitalize().replace("San", "SANs")
+            if test == 'issuer' or test == 'subject':
+                preForm = re.split(r'[A-Z]{1,2}\s?=', logDict['openssl'][test][-1])
+                second  = preForm.pop().lstrip()
+                first   = " ".join(preForm).lstrip()
+                print("%-15s:  %2s" % ("    " + test.capitalize(), first))
+                print("%-15s:  %2s" % ('', second))
+            elif test == 'startdate' or test == 'expiration':
+                right = datetime.datetime.fromtimestamp(int(logDict['openssl'][test][-1])).strftime('%Y-%m-%d %H:%M:%S')
+                left  = "    " + test.capitalize()
+                print("%-15s:  %2s" % (left, right))
+    
+            else:
+                for res in logDict['openssl'][test]:
+                    print("%-15s:  %2s" % (left, res))
+                    left = ""
+    print('\n')
+
+def __list (domain = False):
+    with open(filePath) as logFile:
+        shotlog = logFile.read().splitlines()
+        tests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
+        lendom = 0
+        testlst = []
+        for test in tests:
+            tid, dom, time = shotlog[test].split(' ')[2:5]
+            if len(dom) > lendom:
+                lendom = len(dom)
+            local = datetime.datetime.fromtimestamp(int(time)).strftime('%Y-%m-%d %H:%M:%S')
+            testlst.append([tid, local, dom])
+        
+        lstFrm = '%-12s - %-19s - %-2s'
+        for log in testlst:
+            print(lstFrm % ('      ' +
+                            '\033[1;31m' + log[0] + '\033[0m', 
+                            '\033[1;37m' + log[1] + '\033[0m', 
+                            '\033[1;35m' + log[2] + '\033[0m'))
+    print("\n")
+
+parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
+                                    prefix_chars='-',
+                                    description="buckshot\n" + 
+                                                "       Bulk (shotgun) troubleshooting for websites with historical data.\n" +
+                                                "       Devin Shoemaker - 2019\n",
+                                    epilog=" ")
+            
+parser.add_argument("-c", "--connection", help="view connection statistics", action="store_true")
+parser.add_argument("-d", "--dns", help="view DNS records", action="store_true")
+parser.add_argument("-p", "--page-requisites", help="view status of all page requisites (elements)", action="store_true")
+parser.add_argument("-s", "--ssl", help="view summary of SSL certificate status", action="store_true")
+parser.add_argument("-q", "--quiet", help="write only, no output", action="store_true")
+parser.add_argument("-l", "--list", help="view a summary of all archived reports available", action="store_true")
+parser.add_argument("-L", "--log", help="view archived report from log <uid>", dest="uid")
+parser.add_argument('domain', nargs="?", default="%list%", help="domain, docroot, or user")
+
+args, unknown = parser.parse_known_args()
+
+if args.uid:
+    __parse(args.uid)
+if args.list or (not args.uid and args.domain == "%list%"):
+    __list()
+elif not args.list and not args.uid:
+    ID = __fire(args.domain)
+    __parse(ID)
