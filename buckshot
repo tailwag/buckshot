@@ -7,9 +7,32 @@ import time
 import uuid
 import socket
 import hashlib
+import datetime
 import requests
 import subprocess
 import dns.resolver
+
+def getMonth (monthIn):
+    return{
+            'Jan' : "01",
+            'Feb' : "02",
+            'Mar' : "03",
+            'Apr' : "04",
+            'May' : "05",
+            'Jun' : "06",
+            'Jul' : "07",
+            'Aug' : "08",
+            'Sep' : "09",
+            'Oct' : "10",
+            'Nov' : "11",
+            'Dec' : "12"
+    }[monthIn]
+
+def addNulls (intIn):
+    if intIn < 10:
+        return 0 + intIn
+    else:
+        return intIn
 
 filePath = os.path.expanduser("~") + '/.buckshot'
 uuidGen = str(uuid.uuid4())
@@ -42,20 +65,30 @@ logStart = [i for i, x in enumerate(shotlog) if x[1:16] == border]
 if len(logStart) != 0:
     curLog = shotlog[logStart[-1]:]
     pageReqs = list(filter(re.compile(r'URL:[^ ]*').search, curLog))
+    pageErrs = list(filter(re.compile(r'^https?://[^:]*').search, curLog))
 
 for req in pageReqs:
     logFile = open(filePath, "a+")
     request = req.split(' ')[2].replace("URL:", "")
-    get = requests.get(request)
-    logFile.write('|'.join(['%pagereq%', str(get.status_code), request]) + '\n')
+    logFile.write('|'.join(['%pagereq%', '200', request]) + '\n')
+    logFile.close()
+
+for err in pageErrs:
+    errReq  = [i for i, x in enumerate(curLog) if x == err]
+    errOut  = ":".join(err.split(":")[0:2])
+    errLine = curLog[errReq[0] + 1]
+    errCode = errLine.split(' ')[3].replace(":", "")
+    logFile = open(filePath, "a+")
+    logFile.write('|'.join(['%pagereq%', errCode, errOut]) + '\n')
     logFile.close()
 
 DNS = ['A', 'CNAME', 'NS', 'MX', 'SOA', 'TXT']
 DNSlist = []
+dnsDom = searchDom.replace("https://", "").replace("http://", "").split('/')[0]
 for recType in DNS:
     try:
-        for rdata in dns.resolver.query(searchDom, recType) :
-            DNSlist.append("%dnsrec%" + "|" + recType + "|" + str(rdata))
+        for rdata in dns.resolver.query(dnsDom, recType) :
+            DNSlist.append("%dnsrqst%" + "|" + recType + "|" + str(rdata))
     except:
         dnerr = True
 
@@ -63,3 +96,65 @@ for recOut in DNSlist:
     logFile = open(filePath, "a+")
     logFile.write(recOut + '\n')
     logFile.close()
+
+osslDom = searchDom.replace("http://", "").replace("https://", "").split("/")[0]
+osslCom = 'openssl s_client -showcerts -servername ' + osslDom + ' -connect ' + osslDom + ':443 < /dev/null 2>&1 | openssl x509 -text'
+x509raw = subprocess.Popen(osslCom, stdout=subprocess.PIPE, shell=True).communicate()[0]
+x509lst = x509raw.splitlines()
+
+logFile = open(filePath, "a+")
+for line in x509lst:
+    stripped = line.lstrip().decode('utf-8')
+    if re.match(r'Issuer\s?:.*', stripped):
+        left  = 'issuer'
+        right = ':'.join(stripped.split(":")[1:])
+    if re.match(r'Not Before\s?:.*', stripped):
+        left  = 'startdate'
+        fullna = ':'.join(stripped.split(":")[1:]).lstrip()
+        one, two, thr, fou, fiv = fullna.split(" ")[0:5]
+        month = str(getMonth(one))
+        if two == '':
+            day  = str(addNulls(thr))
+            time = str(fou.replace(":", ""))
+            year = str(fiv)
+        else:
+            day  = str(two)
+            time = str(thr.replace(":", ""))
+            year = str(fou)
+
+        dattim = year + month + day + time
+        right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
+    if re.match(r'Not After\s?:.*', stripped):
+        left  = 'expiration'
+        fullna = ':'.join(stripped.split(":")[1:]).lstrip()
+        one, two, thr, fou, fiv = fullna.split(" ")[0:5]
+        month = str(getMonth(one))
+        if two == '':
+            day  = str(addNulls(thr))
+            time = str(fou.replace(":", ""))
+            year = str(fiv)
+        else:
+            day  = str(two)
+            time = str(thr.replace(":", ""))
+            year = str(fou)
+
+        dattim = year + month + day + time
+        right = str(datetime.datetime.strptime(dattim, '%Y%m%d%H%M%S').timestamp()).split(".")[0]
+
+    if re.match(r'DNS:[^,]*', stripped):
+        dnsList = stripped.split(', ')
+        logFile = open(filePath, "a+")
+        for dns in dnsList:
+            san = dns.split(":")[-1]
+            logFile.write("|".join(['%openssl%', 'san', san]) + '\n')
+        logFile.close()
+        
+
+    if 'right' in locals() and right:
+        logFile = open(filePath, "a+")
+        logFile.write("|".join(["%openssl%", left, right]) + '\n')
+        logFile.close()
+        right = False
+
+for line in x509lst:
+    print(line.decode('utf-8'))
