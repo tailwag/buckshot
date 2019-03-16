@@ -39,7 +39,6 @@ def addNulls (strIn):
 filePath = os.path.expanduser("~") + '/.buckshot'
 uuidGen = str(uuid.uuid4())
 epochTime = str(time.time())
-searchDom = sys.argv[1]
 border = '---------------'
 
 def __fire (searchDom):
@@ -174,7 +173,7 @@ def __fire (searchDom):
     return md5out
 
 
-def __parse (testid):
+def __parse (testid, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
     with open(filePath) as readFile:
         shotlog  = readFile.read().splitlines()
         tests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
@@ -200,53 +199,56 @@ def __parse (testid):
                         logDict[prikey][seckey].append(apnd.replace("%"+prikey+"%|"+seckey+"|", ""))
     
     print("\033[1;31m" + testId + "\033[0m - \033[1;37m" + localtime + "\033[0m - \033[1;35m" + domain + "\033[0m") 
-    print('\n')
-    print("  \033[0;35m==)\033[0m Connection Statistics:\033[0m")
-    for stat in logDict['getstat'].keys():
-        left = "    " + stat.capitalize()
-        for value in logDict['getstat'][stat]:
-            print("%-15s:  %2s" % (left, value))
-            left = ""
-    print('\n')
-    print("  \033[0;35m==)\033[0m DNS Information:\033[0m")
-    for rcrd in logDict['dnsrqst'].keys():
-        if len(logDict['dnsrqst'][rcrd]) != 0:
-            left = "        " + rcrd
-            for res in logDict['dnsrqst'][rcrd]:
-                print("%-15s:  %2s" % (left, res))
+    if 'getstat' in popts:
+        print("  \033[0;35m==)\033[0m Connection Statistics:\033[0m")
+        for stat in logDict['getstat'].keys():
+            left = "    " + stat.capitalize()
+            for value in logDict['getstat'][stat]:
+                print("%-15s:  %2s" % (left, value))
                 left = ""
-    print('\n')
-    print("  \033[0;35m==)\033[0m Page Requisites:\033[0m")
-    ncol = '\033[0m'
-    for preq in logDict['pagereq'].keys():
-        pcol = {'200': "\033[1;32m", '301': "\033[1;34m", '302': "\033[1;34m", 
-                '401': "\033[1;31m", '403': "\033[1;31m", '404': "\033[1;31m",
-                '500': "\033[1;37m", '503': "\033[1;33m"}
-        ncol = '\033[0m'
-        left =  str("        " + pcol[preq] + preq + ncol)
-        for value in logDict['pagereq'][preq]:
-            print("%-26s:  %2s" % (left, value))
-    print('\n')
-    print("  \033[0;35m==)\033[0m SSL Information:\033[0m")
-    for test in logDict['openssl'].keys():
-        if len(logDict['openssl'][test]) != 0:
-            left = "    " + test.capitalize().replace("San", "SANs")
-            if test == 'issuer' or test == 'subject':
-                preForm = re.split(r'[A-Z]{1,2}\s?=', logDict['openssl'][test][-1])
-                second  = preForm.pop().lstrip()
-                first   = " ".join(preForm).lstrip()
-                print("%-15s:  %2s" % ("    " + test.capitalize(), first))
-                print("%-15s:  %2s" % ('', second))
-            elif test == 'startdate' or test == 'expiration':
-                right = datetime.datetime.fromtimestamp(int(logDict['openssl'][test][-1])).strftime('%Y-%m-%d %H:%M:%S')
-                left  = "    " + test.capitalize()
-                print("%-15s:  %2s" % (left, right))
-    
-            else:
-                for res in logDict['openssl'][test]:
+        print('\n')
+    if 'dnsrqst' in popts:
+        print("  \033[0;35m==)\033[0m DNS Information:\033[0m")
+        for rcrd in logDict['dnsrqst'].keys():
+            if len(logDict['dnsrqst'][rcrd]) != 0:
+                left = "        " + rcrd
+                for res in logDict['dnsrqst'][rcrd]:
                     print("%-15s:  %2s" % (left, res))
                     left = ""
-    print('\n')
+        print('\n')
+    if 'pagereq' in popts:
+        print("  \033[0;35m==)\033[0m Page Requisites:\033[0m")
+        ncol = '\033[0m'
+        for preq in logDict['pagereq'].keys():
+            pcol = {'200': "\033[1;32m", '301': "\033[1;34m", '302': "\033[1;34m", 
+                    '401': "\033[1;31m", '403': "\033[1;31m", '404': "\033[1;31m",
+                    '500': "\033[1;37m", '503': "\033[1;33m"}
+            ncol = '\033[0m'
+            left =  str("        " + pcol[preq] + preq + ncol)
+            for value in logDict['pagereq'][preq]:
+                print("%-26s:  %2s" % (left, value))
+        print('\n')
+    if 'openssl' in popts:
+        print("  \033[0;35m==)\033[0m SSL Information:\033[0m")
+        for test in logDict['openssl'].keys():
+            if len(logDict['openssl'][test]) != 0:
+                left = "    " + test.capitalize().replace("San", "SANs")
+                if test == 'issuer' or test == 'subject':
+                    preForm = re.split(r'[A-Z]{1,2}\s?=', logDict['openssl'][test][-1])
+                    second  = preForm.pop().lstrip()
+                    first   = " ".join(preForm).lstrip()
+                    print("%-15s:  %2s" % ("    " + test.capitalize(), first))
+                    print("%-15s:  %2s" % ('', second))
+                elif test == 'startdate' or test == 'expiration':
+                    right = datetime.datetime.fromtimestamp(int(logDict['openssl'][test][-1])).strftime('%Y-%m-%d %H:%M:%S')
+                    left  = "    " + test.capitalize()
+                    print("%-15s:  %2s" % (left, right))
+        
+                else:
+                    for res in logDict['openssl'][test]:
+                        print("%-15s:  %2s" % (left, res))
+                        left = ""
+        print('\n')
 
 def __list (domain = False):
     with open(filePath) as logFile:
@@ -287,10 +289,32 @@ parser.add_argument('domain', nargs="?", default="%list%", help="domain, docroot
 
 args, unknown = parser.parse_known_args()
 
+popts = []
+if args.connection:
+    popts.append('getstat')
+
+if args.dns:
+    popts.append('dnsrqst')
+
+if args.page_requisites:
+    popts.append('pagereq')
+
+if args.ssl:
+    popts.append('openssl')
+
 if args.uid:
-    __parse(args.uid)
+    if len(popts) == 0:
+        __parse(args.uid)
+    else:   
+        __parse(args.uid, popts)
+    sys.exit()
 if args.list or (not args.uid and args.domain == "%list%"):
     __list()
-elif not args.list and not args.uid:
+    sys.exit()
+
+if len(popts) == 0:
     ID = __fire(args.domain)
     __parse(ID)
+else:
+    ID = __fire(args.domain)
+    __parse(ID, popts)
