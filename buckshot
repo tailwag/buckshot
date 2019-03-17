@@ -54,9 +54,9 @@ def __fire (searchDom):
     logFile.write(topBorder)
     logFile.close()
     
-    wget = 'wget -a ' + filePath + ' --delete-after --random-wait -nv -pE -U "buckshot site tester a0.0.1" ' + searchDom 
+    wget = 'wget -a ' + filePath + ' --delete-after -nv  -Hp -U "buckshot site tester a0.0.1" ' + searchDom 
     curlpath = 'curl -LIs ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
-    curlstat = 'curl -Lis -o /dev/null -w "\\n\\n%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' >> ' + filePath
+    curlstat = 'curl -Lis -o /dev/null -w "%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' >> ' + filePath
 
     result = subprocess.Popen(wget, stdout=subprocess.PIPE, shell=True).communicate()[0]
     result = subprocess.Popen(curlpath, stdout=subprocess.PIPE, shell=True).communicate()[0]
@@ -174,7 +174,7 @@ def __fire (searchDom):
     return md5out
 
 
-def __parse (testid, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
+def __parse (testid):
     with open(filePath) as readFile:
         shotlog  = readFile.read().splitlines()
         tests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
@@ -187,7 +187,8 @@ def __parse (testid, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
         testId, domain, epoch = inputLog[0].split(' ')[2:5]
         localtime = datetime.datetime.fromtimestamp(int(epoch)).strftime('%Y-%m-%d %H:%M:%S')
         
-        logDict = {'getstat': {'path':   [], 'connect':   [], 'redirect':   [], 'ttfb':    [], 'total': [], 'full': []},
+        logDict = {'testinf': {'testid': testId, 'domain': domain, 'epoch': epoch, 'localtime': localtime},
+                   'getstat': {'path':   [], 'connect':   [], 'redirect':   [], 'ttfb':    [], 'total': [], 'full': []},
                    'pagereq': {'200':    [], '301':       [], '302':        [], '401':     [], '403':   [], '404':  [], '500': [], '503': []},
                    'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':      [], 'SOA':   [], 'TXT':  []},
                    'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject': [], 'san':   []}}
@@ -198,7 +199,14 @@ def __parse (testid, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
                 if len(results) != 0:
                     for apnd in results:
                         logDict[prikey][seckey].append(apnd.replace("%"+prikey+"%|"+seckey+"|", ""))
-    
+        return logDict
+  
+def __display (logDict, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
+    testId    = logDict['testinf']['testid']
+    domain    = logDict['testinf']['domain']
+    epoch     = logDict['testinf']['epoch']
+    localtime = logDict['testinf']['localtime']
+
     print("\033[1;31m" + testId + "\033[0m - \033[1;37m" + localtime + "\033[0m - \033[1;35m" + domain + "\033[0m") 
     if 'getstat' in popts:
         print("  \033[0;35m==)\033[0m Connection Statistics:\033[0m")
@@ -262,14 +270,69 @@ def __list (domain = False):
             if len(dom) > lendom:
                 lendom = len(dom)
             local = datetime.datetime.fromtimestamp(int(time)).strftime('%Y-%m-%d %H:%M:%S')
-            testlst.append([tid, local, dom])
+            testStat = __parse(tid)
+            loadTime = 'Load: ' + testStat['getstat']['full'][-1]
+            pageReqs = 0
+            pageErrs = 0
+            for i in testStat['pagereq'].keys():
+                pageReqs += len(testStat['pagereq'][i])
+                if int(i) >= 401:
+                    pageErrs += len(testStat['pagereq'][i])
+            strpdom = dom.replace("https://", "").replace("http://", "").split('/')[0]
+            mainwld = '*.' + strpdom
+            rootwld = '*.' + ".".join(strpdom.split(".")[1:])
+            
+
+            sslsts  = '  \033[1;32mValid SSL\033[0m'
+            if   strpdom in testStat['openssl']['subject'][-1].split(" "):
+                foundin = 'subject'
+            elif mainwld in testStat['openssl']['subject'][-1].split(" "):
+                foundin = 'subject'
+            elif rootwld in testStat['openssl']['subject'][-1].split(" "):
+                foundin = 'subject'
+            elif strpdom in testStat['openssl']['san']:
+                foundin = 'san'
+            elif mainwld in testStat['openssl']['san']:
+                foundin = 'san'
+            elif rootwld in testStat['openssl']['san']:
+                foundin = 'san'
+            else:
+                sslsts = '\033[1;33mInvalid SSL\033[0m'
+
+            if testStat['openssl']['expiration'][-1] <= testStat['testinf']['epoch']:
+                sslsts = '\033[1;31mExpired SSL\033[0m'
+            
+            if pageReqs < 10:
+                preq = '  ' + str(pageReqs)
+            elif pageReqs < 100:
+                preq = ' ' + str(pageReqs)
+            else:
+                preq = str(pageReqs)
+
+            if pageErrs < 10:
+                perr = '  ' + str(pageErrs)
+            elif pageErrs < 100:
+                perr = ' ' + str(pageErrs)
+            else:
+                perr = str(pageErrs)
+
+            if len(dom) > 40:
+                domain = dom[:35] + '(...)'
+                lendom = 40
+            else:
+                domain = dom
+            testlst.append([tid, local, domain, loadTime, sslsts, preq, perr])
         
-        lstFrm = '%-12s - %-19s - %-2s'
+        lstFrm = '%-12s - %-19s - %-' + str(lendom + 11) + 's - %-21s - %-22s - %-3s req  %-3s err'
         for log in testlst:
             print(lstFrm % ('      ' +
                             '\033[1;31m' + log[0] + '\033[0m', 
                             '\033[1;37m' + log[1] + '\033[0m', 
-                            '\033[1;35m' + log[2] + '\033[0m'))
+                            '\033[1;36m' + log[2] + '\033[0m',
+                            '\033[0;37m' + log[3] + '\033[0m',
+                                           log[4],
+                            '\033[0;34m' + log[5] + '\033[0m',
+                            '\033[0;33m' + log[6] + '\033[0m'))
     print("\n")
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -303,11 +366,15 @@ if args.page_requisites:
 if args.ssl:
     popts.append('openssl')
 
+if args.quiet:
+    quiet = __fire(args.domain)
+    sys.exit()
+
 if args.uid:
     if len(popts) == 0:
-        __parse(args.uid)
+        __display(__parse(args.uid))
     else:   
-        __parse(args.uid, popts)
+        __display(__parse(args.uid), popts)
     sys.exit()
 if args.list or (not args.uid and args.domain == "%list%"):
     __list()
@@ -315,7 +382,7 @@ if args.list or (not args.uid and args.domain == "%list%"):
 
 if len(popts) == 0:
     ID = __fire(args.domain)
-    __parse(ID)
+    __display(__parse(ID))
 else:
     ID = __fire(args.domain)
-    __parse(ID, popts)
+    __display(__parse(ID), popts)
