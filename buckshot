@@ -92,6 +92,7 @@ def __fire (searchDom):
         pageErrs = list(filter(re.compile(r'^https?://[^:]*').search, curLog))
         loadTime = list(filter(re.compile(r'Total wall clock time.*').search, curLog))
     
+    if len(loadTime) != 0:
         loadSec = loadTime[-1].split(' ')[-1]
         logFile = open(filePath, "a+")
         logFile.write("|".join(['%getstat%', 'full', loadSec]) + '\n')
@@ -127,7 +128,7 @@ def __fire (searchDom):
         logFile.close()
     
     osslDom = searchDom.replace("http://", "").replace("https://", "").split("/")[0]
-    osslCom = 'openssl s_client -showcerts -servername ' + osslDom + ' -connect ' + osslDom + ':443 < /dev/null 2>&1 | openssl x509 -text'
+    osslCom = 'openssl s_client -showcerts -servername ' + osslDom + ' -connect ' + osslDom + ':443 < /dev/null 2>&1 | openssl x509 -text 2> /dev/null'
     x509raw = subprocess.Popen(osslCom, stdout=subprocess.PIPE, shell=True).communicate()[0]
     x509lst = x509raw.splitlines()
     
@@ -289,12 +290,17 @@ def __display (logDict, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
                         left = ""
         print('\n')
 
-def __list (domain = False):
+def __list (countin = "20", domain = False):
+    tail = int(countin)
     with open(filePath) as logFile:
         shotlog = logFile.read().splitlines()
-        tests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
+        alltests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
+        count = len(alltests)
+        tests = alltests[-tail:]
         lendom = 0
         lenadd = 0
+        lenldt = 0
+        rowlen = 0
         testlst = []
         for test in tests:
             tid, dom, time = shotlog[test].split(' ')[2:5]
@@ -302,7 +308,12 @@ def __list (domain = False):
                 lendom = len(dom)
             local = datetime.datetime.fromtimestamp(int(time)).strftime('%Y-%m-%d %H:%M:%S')
             testStat = __parse(tid)
-            loadTime = 'Load: ' + testStat['getstat']['full'][-1]
+            try:
+                loadTime = '\033[0;37mLoad: ' + testStat['getstat']['full'][-1] + '\033[0m'
+            except IndexError:
+                loadTime = '\033[0;31mError\033[0m'
+            if len(loadTime) > lenldt:
+                lenldt = len(loadTime)
             pageReqs = 0
             pageErrs = 0
             for i in testStat['pagereq'].keys():
@@ -317,25 +328,27 @@ def __list (domain = False):
             if len(addr) > lenadd:
                 lenadd = len(addr)
 
-
-            sslsts  = '  \033[1;32mValid SSL\033[0m'
-            if   strpdom in testStat['openssl']['subject'][-1].split(" "):
-                foundin = 'subject'
-            elif mainwld in testStat['openssl']['subject'][-1].split(" "):
-                foundin = 'subject'
-            elif rootwld in testStat['openssl']['subject'][-1].split(" "):
-                foundin = 'subject'
-            elif strpdom in testStat['openssl']['san']:
-                foundin = 'san'
-            elif mainwld in testStat['openssl']['san']:
-                foundin = 'san'
-            elif rootwld in testStat['openssl']['san']:
-                foundin = 'san'
+            if len(testStat['openssl']['subject']) == 0:
+                sslsts  = ' \033[1;37m--No SSL--\033[0m'
             else:
-                sslsts = '\033[1;33mInvalid SSL\033[0m'
+                sslsts  = '  \033[1;32mValid SSL\033[0m'
+                if   strpdom in testStat['openssl']['subject'][-1].split(" "):
+                    foundin = 'subject'
+                elif mainwld in testStat['openssl']['subject'][-1].split(" "):
+                    foundin = 'subject'
+                elif rootwld in testStat['openssl']['subject'][-1].split(" "):
+                    foundin = 'subject'
+                elif strpdom in testStat['openssl']['san']:
+                    foundin = 'san'
+                elif mainwld in testStat['openssl']['san']:
+                    foundin = 'san'
+                elif rootwld in testStat['openssl']['san']:
+                    foundin = 'san'
+                else:
+                    sslsts = '\033[1;33mInvalid SSL\033[0m'
 
-            if testStat['openssl']['expiration'][-1] <= testStat['testinf']['epoch']:
-                sslsts = '\033[1;31mExpired SSL\033[0m'
+                if testStat['openssl']['expiration'][-1] <= testStat['testinf']['epoch']:
+                    sslsts = '\033[1;31mExpired SSL\033[0m'
             
             if pageReqs < 10:
                 preq = '  ' + str(pageReqs)
@@ -351,21 +364,37 @@ def __list (domain = False):
             else:
                 perr = str(pageErrs)
 
-            if len(dom) > 40:
-                domain = dom[:35] + '(...)'
-                lendom = 40
+            if len(dom) > 35:
+                domain = dom[:32] + '...'
+                lendom = 35
             else:
                 domain = dom
-            testlst.append([tid, local, domain, addr, loadTime, sslsts, preq, perr])
+            row = [tid, local, domain, addr, loadTime, sslsts, preq, perr]
+            if len(" - ".join(row)) > rowlen:
+                rowlen = len(" - ".join(row))
+            testlst.append(row)
         
-        lstFrm = '%-12s - %-19s - %-' + str(lendom + 11) + 's - %-' + str(lenadd + 11) + 's - %-21s - %-22s - %-3s req  %-3s err'
+        foundMsg = '\033[0;35m   \033[0m \033[1;32m' + str(count) + ' tests found'
+        if count > tail:
+            foundMsg += ', displaying last ' + str(tail)
+        foundMsg += '\033[0m'
+        topsep = ""
+        rowlen = 134
+        while rowlen != 1:
+            topsep += "="
+            rowlen -= 1
+
+
+        print(foundMsg)
+        print('\033[0;35m' + topsep + '\033[0m')
+        lstFrm = '%-12s - %-19s - %-' + str(lendom + 11) + 's - %-' + str(lenadd + 11) + 's - %-' + str(lenldt) + 's - %-22s - %-3s req  %-3s err'
         for log in testlst:
-            print(lstFrm % ('  ' +
+            print(lstFrm % (' ' +
                             '\033[1;31m' + log[0] + '\033[0m', 
                             '\033[1;37m' + log[1] + '\033[0m', 
                             '\033[1;36m' + log[2] + '\033[0m',
                             '\033[1;35m' + log[3] + '\033[0m',
-                            '\033[0;37m' + log[4] + '\033[0m',
+                                           log[4],
                                            log[5],
                             '\033[0;34m' + log[6] + '\033[0m',
                             '\033[0;33m' + log[7] + '\033[0m'))
@@ -383,7 +412,7 @@ parser.add_argument("-d", "--dns", help="view DNS records", action="store_true")
 parser.add_argument("-p", "--page-requisites", help="view status of all page requisites (elements)", action="store_true")
 parser.add_argument("-s", "--ssl", help="view summary of SSL certificate status", action="store_true")
 parser.add_argument("-q", "--quiet", help="write only, no output", action="store_true")
-parser.add_argument("-l", "--list", help="view a summary of all archived reports available", action="store_true")
+parser.add_argument("-l", "--list", nargs="?", default="20", dest="count", help="view a summary of all archived reports available")
 parser.add_argument("-L", "--log", help="view archived report from log <uid>", dest="uid")
 parser.add_argument('domain', nargs="?", default="%list%", help="address to test")
 
@@ -412,8 +441,11 @@ if args.uid:
     else:   
         __display(__parse(args.uid), popts)
     sys.exit()
-if args.list or (not args.uid and args.domain == "%list%"):
-    __list()
+if not args.uid and args.domain == "%list%":
+    if args.count == None:
+        __list(20)
+    else:
+        __list(str(args.count))
     sys.exit()
 
 if len(popts) == 0:
