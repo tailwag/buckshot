@@ -73,7 +73,7 @@ def __fire (searchDom):
     # do raw analysis 
     wget = 'wget -a ' + filePath + ' --delete-after -nv  -Hp -U "buckshot site tester a0.0.1" ' + searchDom 
     curlpath = 'curl -LIs ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
-    curlstat = 'curl -Lis -o /dev/null -w "%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' >> ' + filePath
+    curlstat = 'curl -Lis -o /dev/null -w "%%getstat%%|address|%{remote_ip}\\n%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' >> ' + filePath
 
     result = subprocess.Popen(wget, stdout=subprocess.PIPE, shell=True).communicate()[0]
     result = subprocess.Popen(curlpath, stdout=subprocess.PIPE, shell=True).communicate()[0]
@@ -207,10 +207,10 @@ def __parse (testid):
         localtime = datetime.datetime.fromtimestamp(int(epoch)).strftime('%Y-%m-%d %H:%M:%S')
         
         logDict = {'testinf': {'testid': testId, 'domain': domain, 'epoch': epoch, 'localtime': localtime},
-                   'getstat': {'path':   [], 'connect':   [], 'redirect':   [], 'ttfb':    [], 'total': [], 'full': []},
-                   'pagereq': {'200':    [], '301':       [], '302':        [], '401':     [], '403':   [], '404':  [], '500': [], '503': []},
-                   'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':      [], 'SOA':   [], 'TXT':  []},
-                   'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject': [], 'san':   []}}
+                   'getstat': {'path':   [], 'address':   [], 'connect':    [], 'redirect': [], 'ttfb':    [], 'total': [], 'full': []},
+                   'pagereq': {'200':    [], '301':       [], '302':        [], '401':      [], '403':   [], '404':  [], '500': [], '503': []},
+                   'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':       [], 'SOA':   [], 'TXT':  []},
+                   'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject':  [], 'san':   []}}
     
         for prikey in logDict.keys():
             for seckey in logDict[prikey].keys():
@@ -294,6 +294,7 @@ def __list (domain = False):
         shotlog = logFile.read().splitlines()
         tests = [i for i, x in enumerate(shotlog) if x[1:16] == border]
         lendom = 0
+        lenadd = 0
         testlst = []
         for test in tests:
             tid, dom, time = shotlog[test].split(' ')[2:5]
@@ -312,6 +313,10 @@ def __list (domain = False):
             mainwld = '*.' + strpdom
             rootwld = '*.' + ".".join(strpdom.split(".")[1:])
             
+            addr = testStat['getstat']['address'][-1]
+            if len(addr) > lenadd:
+                lenadd = len(addr)
+
 
             sslsts  = '  \033[1;32mValid SSL\033[0m'
             if   strpdom in testStat['openssl']['subject'][-1].split(" "):
@@ -351,18 +356,19 @@ def __list (domain = False):
                 lendom = 40
             else:
                 domain = dom
-            testlst.append([tid, local, domain, loadTime, sslsts, preq, perr])
+            testlst.append([tid, local, domain, addr, loadTime, sslsts, preq, perr])
         
-        lstFrm = '%-12s - %-19s - %-' + str(lendom + 11) + 's - %-21s - %-22s - %-3s req  %-3s err'
+        lstFrm = '%-12s - %-19s - %-' + str(lendom + 11) + 's - %-' + str(lenadd + 11) + 's - %-21s - %-22s - %-3s req  %-3s err'
         for log in testlst:
-            print(lstFrm % ('      ' +
+            print(lstFrm % ('  ' +
                             '\033[1;31m' + log[0] + '\033[0m', 
                             '\033[1;37m' + log[1] + '\033[0m', 
                             '\033[1;36m' + log[2] + '\033[0m',
-                            '\033[0;37m' + log[3] + '\033[0m',
-                                           log[4],
-                            '\033[0;34m' + log[5] + '\033[0m',
-                            '\033[0;33m' + log[6] + '\033[0m'))
+                            '\033[1;35m' + log[3] + '\033[0m',
+                            '\033[0;37m' + log[4] + '\033[0m',
+                                           log[5],
+                            '\033[0;34m' + log[6] + '\033[0m',
+                            '\033[0;33m' + log[7] + '\033[0m'))
     print("\n")
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
@@ -379,7 +385,7 @@ parser.add_argument("-s", "--ssl", help="view summary of SSL certificate status"
 parser.add_argument("-q", "--quiet", help="write only, no output", action="store_true")
 parser.add_argument("-l", "--list", help="view a summary of all archived reports available", action="store_true")
 parser.add_argument("-L", "--log", help="view archived report from log <uid>", dest="uid")
-parser.add_argument('domain', nargs="?", default="%list%", help="domain, docroot, or user")
+parser.add_argument('domain', nargs="?", default="%list%", help="address to test")
 
 args, unknown = parser.parse_known_args()
 
