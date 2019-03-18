@@ -36,24 +36,41 @@ def addNulls (strIn):
     else:
         return intIn
 
+# set log file 
 filePath = os.path.expanduser("~") + '/.buckshot'
+
+# get salt for ID generation
 uuidGen = str(uuid.uuid4())
+
+# get current epoch time 
 epochTime = str(time.time())
+
+# border for logging
 border = '---------------'
 
 def __fire (searchDom):
+    # generate log ID
     md5form = hashlib.md5()
     updateStr = str(uuidGen + epochTime + searchDom).encode('utf-8')
     md5form.update(updateStr)
-    
     md5out = str(md5form.hexdigest())[:6]
     
+    if searchDom[:7] != 'http://' and searchDom[:8] != 'https://':
+        statTest = 'http://' + searchDom
+    else:
+        statTest = searchDom
+    try:
+        rTest = requests.get(statTest)
+    except:
+        sys.exit('Could not load site')
+
+    # write top border to log file 
     topBorder = ' '.join(['\n', border, md5out, searchDom, epochTime.split(".")[0], border, '\n']) 
-    
     logFile = open(filePath, "a+")
     logFile.write(topBorder)
     logFile.close()
     
+    # do raw analysis 
     wget = 'wget -a ' + filePath + ' --delete-after -nv  -Hp -U "buckshot site tester a0.0.1" ' + searchDom 
     curlpath = 'curl -LIs ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
     curlstat = 'curl -Lis -o /dev/null -w "%%getstat%%|connect|%{time_connect}\\n%%getstat%%|redirect|%{time_redirect}\\n%%getstat%%|ttfb|%{time_starttransfer}\\n%%getstat%%|total|%{time_total}\\n" ' + searchDom + ' >> ' + filePath
@@ -62,9 +79,11 @@ def __fire (searchDom):
     result = subprocess.Popen(curlpath, stdout=subprocess.PIPE, shell=True).communicate()[0]
     result = subprocess.Popen(curlstat, stdout=subprocess.PIPE, shell=True).communicate()[0]
     
+    # open log after raw write
     with open(filePath) as readFile:
         shotlog = readFile.read().splitlines()
     
+    # retrieve list of past logs 
     logStart = [i for i, x in enumerate(shotlog) if x[1:16] == border]
     
     if len(logStart) != 0:
@@ -243,11 +262,22 @@ def __display (logDict, popts = ['getstat', 'pagereq', 'dnsrqst', 'openssl']):
             if len(logDict['openssl'][test]) != 0:
                 left = "    " + test.capitalize().replace("San", "SANs")
                 if test == 'issuer' or test == 'subject':
-                    preForm = re.split(r'[A-Z]{1,2}\s?=', logDict['openssl'][test][-1])
-                    second  = preForm.pop().lstrip()
-                    first   = " ".join(preForm).lstrip()
-                    print("%-15s:  %2s" % ("    " + test.capitalize(), first))
-                    print("%-15s:  %2s" % ('', second))
+                    #preForm = re.split(r'[A-Z]{1,2}\s?=', logDict['openssl'][test][0])
+                    #second  = preForm.pop().lstrip()
+                    #first   = " ".join(preForm).lstrip()
+                    #print("%-15s:  %2s" % ("    " + test.capitalize(), first))
+                    #print("%-15s:  %2s" % ('', second))
+                    splitList = logDict['openssl'][test][0].split(' ')
+                    if len(splitList) > 20:
+                        print("%-15s:  %2s" % ("    " + test.capitalize(), " ".join(splitList[:10])))
+                        print("%-15s:  %2s" % ("", " ".join(splitList[10:20])))
+                        print("%-15s:  %2s" % ("", " ".join(splitList[20:])))
+                    elif len(splitList) > 10:
+                        print("%-15s:  %2s" % ("    " + test.capitalize(), " ".join(splitList[:10])))
+                        print("%-15s:  %2s" % ("", " ".join(splitList[10:])))
+                    else:
+                        print("%-15s:  %2s" % ("    " + test.capitalize(), " ".join(splitList)))
+
                 elif test == 'startdate' or test == 'expiration':
                     right = datetime.datetime.fromtimestamp(int(logDict['openssl'][test][-1])).strftime('%Y-%m-%d %H:%M:%S')
                     left  = "    " + test.capitalize()
