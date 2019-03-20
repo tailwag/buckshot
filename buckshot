@@ -32,9 +32,9 @@ def getMonth (monthIn):
 def addNulls (strIn):
     intIn = int(strIn)
     if intIn < 10:
-        return 0 + intIn
+        return '0' + strIn
     else:
-        return intIn
+        return strIn
 
 # set log file 
 filePath = os.path.expanduser("~") + '/.buckshot'
@@ -69,7 +69,6 @@ def __fire (searchDom):
     logFile = open(filePath, "a+")
     logFile.write(topBorder)
     logFile.close()
-    
     # do raw analysis 
     wget = 'wget -a ' + filePath + ' --delete-after -nv  -Hp -U "buckshot site tester a0.0.1" ' + searchDom 
     curlpath = 'curl -LIs ' + searchDom + ' | grep -Eo "(HTTP|Location:|^%).+\\b" | sed \'s:\(HTTP\|Location\):%getstat%\|path\|\\1:g\' >> ' + filePath
@@ -144,6 +143,14 @@ def __fire (searchDom):
     logFile = open(filePath, "a+")
     for line in x509lst:
         stripped = line.lstrip().decode('utf-8')
+
+        if 'serial' in locals():
+            left  = 'serial'
+            right = stripped
+            del serial
+        if stripped == "Serial Number:":
+            serial  = True
+
         if re.match(r'Issuer\s?:.*', stripped):
             left  = 'issuer'
             right = ':'.join(stripped.split(":")[1:])
@@ -170,7 +177,7 @@ def __fire (searchDom):
             fullna = ':'.join(stripped.split(":")[1:]).lstrip()
             one, two, thr, fou, fiv = fullna.split(" ")[0:5]
             month = str(getMonth(one))
-            if two == '':
+            if two == "":
                 day  = str(addNulls(thr))
                 time = str(fou.replace(":", ""))
                 year = str(fiv)
@@ -237,10 +244,10 @@ def __parse (testid):
     #           %%dnsrqst%%|NS|bob.ns.cloudflare.com.           logDict['dnsrqst']['NS'][-1] ===> 'lola.ns.cloudflare.com'
     #           %%dnsrqst%%|NS|lola.ns.cloudflare.com.
     logDict = {'testinf': {'testid': testId, 'domain': domain, 'epoch': epoch, 'localtime': localtime},
-               'getstat': {'path':   [], 'address':   [], 'connect':    [], 'redirect': [], 'ttfb':  [], 'total': [], 'full': [] },
-               'pagereq': {'200':    [], '301':       [], '302':        [], '401':      [], '403':   [], '404':   [], '500': [], '503': [] },
-               'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':       [], 'SOA':   [], 'TXT':   [] },
-               'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject':  [], 'san':   [] } }
+               'getstat': {'path':   [], 'address':   [], 'connect':    [], 'redirect': [], 'ttfb':  [], 'total':  [], 'full': [] },
+               'pagereq': {'200':    [], '301':       [], '302':        [], '401':      [], '403':   [], '404':    [], '500': [], '503': [] },
+               'dnsrqst': {'A':      [], 'CNAME':     [], 'NS':         [], 'MX':       [], 'SOA':   [], 'TXT':    [] },
+               'openssl': {'issuer': [], 'startdate': [], 'expiration': [], 'subject':  [], 'san':   [], 'serial': [] } }
     
     # populate statistics dictionary from log file for selected test
     for prikey in logDict.keys():
@@ -480,6 +487,166 @@ def __list (countin = "20", domain = False):
                         '\033[0;33m' + log[7] + '\033[0m'))
     print("\n")
 
+def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
+    dictOne = __parse(one)
+    dictTwo = __parse(two)
+
+    oneID, oneDom, oneEpoch, oneLocal = dictOne['testinf'].values()
+    twoID, twoDom, twoEpoch, twoLocal = dictTwo['testinf'].values()
+
+    if len(oneDom) > 25:
+        oneAdjDom = oneDom[:22] + '...'
+    else: 
+        oneAdjDom = oneDom
+
+    if len(twoDom) > 25:
+        twoAdjDom = twoDom[:22] + '...'
+    else: 
+        twoAdjDom = twoDom
+
+    frmStr = "%-17s - %-30s - %-36s \033[1;32m-->\033[0m %-17s - %-30s - %-36s\n" 
+    print (frmStr % ('\033[1;31m' + oneID + '\033[0m', 
+                     '\033[1;37m' + oneLocal + '\033[0m', 
+                     '\033[1;35m' + oneAdjDom + '\033[0m', 
+                     '\033[1;31m' + twoID + '\033[0m',    
+                     '\033[1;37m' + twoLocal + '\033[0m',  
+                     '\033[1;35m' + twoAdjDom + '\033[0m',))
+
+    
+    for display in popts:
+        if display == 'getstat':
+            print('  \033[0;35m==)\033[0;33m +-\033[0m Connection Stats')
+            # Path diff
+            # determine if there's a difference between the redirect path 
+            if dictOne['getstat']['path'] != dictTwo['getstat']['path']:
+                # set the total ammount of "stops" along the way 
+                totalLine = len(dictOne['getstat']['path'])
+                if len(dictTwo['getstat']['path']) > totalLine:
+                    totalLine = len(dictOne['getstat']['path'])
+                
+                # determine the longest line for width
+                longest = 0
+                for p in dictOne['getstat']['path']:
+                    if len(p) > longest:
+                        longest = len(p)
+        
+                # if length isn't divisible by 2, make it divisible by 2
+                if longest % 2 == 1:
+                    longest += 1
+                
+                # set formatting for later, indent -> line1 -> 6 spaces -> line2
+                frmStr = "%-6s\033[0;33m|\033[0m   %-" + str(longest + 39) + "s%-17s"
+                
+                # set the "border wing", leaving space for 6 digit uid wrapped in spaces
+                bordwing = '\033[0;35m' + str('=' * int((longest - 8) / 2)) + '\033[0m'
+                    
+                # put the border wing on either side of each uid, then print heads
+                headOne = bordwing + " \033[1;31m" + one + "\033[0m " + bordwing
+                headTwo = bordwing + " \033[1;31m" + two + "\033[0m " + bordwing
+                
+                print('      \033[0;33m|\033[0m')
+                print('      \033[0;33m|---- \033[0;37mRedirect Path\033[0m')
+
+                print(frmStr % ("", headOne, headTwo))
+       
+                frmStr = "%-6s\033[0;33m|\033[0m   %-" + str(longest + 6) + "s%-6s"
+                # loop through path for longest length
+                loopLine = 1 
+                while loopLine <= totalLine:
+                    left  = ""
+                    right = ""
+                    # get left from dict1 if it exists
+                    if len(dictOne['getstat']['path']) >= loopLine:
+                        left  = dictOne['getstat']['path'][loopLine - 1]
+        
+                    # get right from dict2 if it exists
+                    if len(dictTwo['getstat']['path']) >= loopLine:
+                        right = dictTwo['getstat']['path'][loopLine - 1]
+                    
+                    # spit it out 
+                    print(frmStr % ("", left, right))
+                    loopLine += 1
+        
+                print('\n')
+        if display == 'dnsrqst':  
+            # loops through A, CNAME, NS etc.
+            for rectype in dictOne['dnsrqst'].keys():
+                # generate list of records for type from dict1
+                typerecord = []
+                typerecord.extend(dictOne['dnsrqst'][rectype])
+
+                # append values from dict2 if they don't already exist
+                for tworec in dictTwo['dnsrqst'][rectype]:
+                    if tworec not in typerecord:
+                        typerecord.append(tworec) 
+                
+                # check to see if there are any differences between dict 1 & 2
+                # double loop method used because DNS records often come back in different orders 
+                checkone = [i for i, x in enumerate(dictOne['dnsrqst'][rectype]) if x not in dictTwo['dnsrqst'][rectype]]
+                checktwo = [i for i, x in enumerate(dictTwo['dnsrqst'][rectype]) if x not in dictOne['dnsrqst'][rectype]]
+
+                # if differences exist
+                if (len(checkone) + len(checktwo)) != 0:
+                    # print section head if it hasn't been printed yet
+                    if 'dnsHead' not in locals():
+                        print('\033[0;35m  ==)\033[0m \033[0;33m+-\033[0m DNS Records')
+                        dnsHead = True
+
+                    # print subsection head
+                    print('      \033[0;33m|\033[0m')
+                    print('      \033[0;33m|----\033[0m \033[0;36m' + rectype + '\033[0m')
+
+                for record in typerecord:
+                    if record in dictOne['dnsrqst'][rectype] and record not in dictTwo['dnsrqst'][rectype]:
+                        print('      \033[0;33m|\033[0m     \033[0;31m- ' + record + '\033[0m')
+                    if record in dictTwo['dnsrqst'][rectype] and record not in dictOne['dnsrqst'][rectype]:
+                        print('      \033[0;33m|\033[0m     \033[0;32m+ ' + record + '\033[0m')
+            print('\n') 
+
+
+        if display == 'pagereq':
+            # loops through status codes: 200, 403, 404, 500
+            for pagereq in dictOne['pagereq'].keys():
+                # generate list of present http response codes from dict1
+                preq = []
+                preq.extend(dictOne['pagereq'][pagereq])
+
+                # append values from dict2 if they don't already exist
+                for tworeq in dictTwo['pagereq'][pagereq]:
+                    if tworeq not in preq:
+                        preq.append(tworeq) 
+
+                # check to see of there are any differences between dict 1 & 2
+                checkone = [i for i, x in enumerate(dictOne['pagereq'][pagereq]) if x not in dictTwo['pagereq'][pagereq]]
+                checktwo = [i for i, x in enumerate(dictTwo['pagereq'][pagereq]) if x not in dictOne['pagereq'][pagereq]]
+
+                # if differences exist 
+                if (len(checkone) + len(checktwo)) != 0:
+                    # print section head if it hasn't been printed yet
+                    if 'reqHead' not in locals():
+                        print('\033[0;35m  ==)\033[0m \033[0;33m+-\033[0m Page Requisites')
+                        reqHead = True
+
+                    pcol  = {'200': "\033[1;32m", '301': "\033[1;34m", '302': "\033[1;34m", 
+                             '401': "\033[1;31m", '403': "\033[1;31m", '404': "\033[1;31m",
+                             '500': "\033[1;37m", '503': "\033[1;33m", 'end': "\033[0m"}
+
+                    # print subsection head
+                    print('      \033[0;33m|\033[0m')
+                    print('      \033[0;33m|----\033[0m \033[0;36m' + pcol[pagereq] + pagereq + pcol['end'] + '\033[0m')
+                    print('      \033[0;33m|\033[0m')
+
+                for request in preq:
+                    if request in dictOne['pagereq'][pagereq] and request not in dictTwo['pagereq'][pagereq]:
+                        print('      \033[0;33m|\033[0m     \033[0;31m- ' + request + '\033[0m')
+                    if request in dictTwo['pagereq'][pagereq] and request not in dictOne['pagereq'][pagereq]:
+                        print('      \033[0;33m|\033[0m     \033[0;32m+ ' + request + '\033[0m')
+            print('\n')
+
+        if display == 'openssl':
+            if dictOne['openssl']['serial'] != dictTwo['openssl']['serial']:
+                print('  \033[0;35m==)\033[0m SSL Information')
+
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
                                     prefix_chars='-',
                                     description="buckshot\n" + 
@@ -491,25 +658,31 @@ parser.add_argument("-c", "--connection", help="view connection statistics", act
 parser.add_argument("-d", "--dns", help="view DNS records", action="store_true")
 parser.add_argument("-p", "--page-requisites", help="view status of all page requisites (elements)", action="store_true")
 parser.add_argument("-s", "--ssl", help="view summary of SSL certificate status", action="store_true")
-parser.add_argument("-q", "--quiet", help="write only, no output", action="store_true")
-parser.add_argument("-l", "--list", nargs="?", default="20", dest="count", help="view a summary of all archived reports available")
-parser.add_argument("-L", "--log", help="view archived report from log <uid>", dest="uid")
+parser.add_argument("-q", "--quiet", help="write only, no output\n\n", action="store_true")
+parser.add_argument("-l", "--list", nargs="?", default="20", dest="lines", help="view a summary of all archived reports available\n\n")
+parser.add_argument("-L", "--log", help="view archived report from log <uid>\n\n", dest="uid")
+parser.add_argument("-D", "--diff", help="compare results from two tests\n" +
+                                         "    buckshot -D af30d2 e9a00d\n" +
+                                         "    buckshot -D af30d2 domain.com", dest="test")
 parser.add_argument('domain', nargs="?", default="%list%", help="address to test")
 
 args, unknown = parser.parse_known_args()
 
 popts = []
-if args.connection:
-    popts.append('getstat')
 
-if args.dns:
-    popts.append('dnsrqst')
-
-if args.page_requisites:
-    popts.append('pagereq')
-
-if args.ssl:
-    popts.append('openssl')
+argDict = args.__dict__
+for add in argDict.keys():
+    if add == 'connection' and argDict[add]:
+        popts.append('getstat')
+    
+    if add == 'dns' and argDict[add]:
+        popts.append('dnsrqst')
+    
+    if add == 'page_requisites' and argDict[add]:
+        popts.append('pagereq')
+    
+    if add == 'ssl' and argDict[add]:
+        popts.append('openssl')
 
 if args.quiet:
     quiet = __fire(args.domain)
@@ -521,11 +694,27 @@ if args.uid:
     else:   
         __display(__parse(args.uid), popts)
     sys.exit()
+
+if args.test:
+    if not args.domain:
+        sys.exit("diff requires two arguments. buckshot -h for help")
+    else:
+        if re.match(r'^[a-z0-9]{6}$', args.domain):
+            newcomp = args.domain
+        else:
+            newcomp = __fire(args.domain)
+        
+        if len(popts) == 0:
+            __diff(args.test, newcomp)
+        else:
+            __diff(args.test, newcomp, popts)
+        sys.exit()
+
 if not args.uid and args.domain == "%list%":
-    if args.count == None:
+    if args.lines == None:
         __list(20)
     else:
-        __list(str(args.count))
+        __list(str(args.lines))
     sys.exit()
 
 if len(popts) == 0:
