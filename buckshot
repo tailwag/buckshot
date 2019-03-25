@@ -409,7 +409,10 @@ def __list (countin = "20", domain = False):
         rootwld = '*.' + ".".join(strpdom.split(".")[1:])
         
         # get IP address, %{remote_ip} from curl
-        addr = testStat['getstat']['address'][-1]
+        try:
+            addr = testStat['getstat']['address'][-1]
+        except IndexError:
+            addr = 'NULL'
 
         # length of longest IP for column style formatting
         if len(addr) > lenadd:
@@ -516,17 +519,29 @@ def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
     for display in popts:
         if display == 'getstat':
             print('  \033[0;35m==)\033[0;33m +-\033[0m Connection Stats')
-            # Path diff
+
+            ################ RESOLVES TO   ##############################
+            # determine if there's a difference 
+            if dictOne['getstat']['address'] != dictTwo['getstat']['address']:
+                print('      \033[0;33m|\033[0m')
+                print('      \033[0;33m|---- \033[0;37mAddress\033[0m')
+                print('      \033[0;33m|     \033[0;31m- ' + dictOne['getstat']['address'][0] + '\033[0m')
+                print('      \033[0;33m|     \033[0;32m+ ' + dictTwo['getstat']['address'][0] + '\033[0m')
+
+            ################ REDIRECT PATH ##############################
             # determine if there's a difference between the redirect path 
             if dictOne['getstat']['path'] != dictTwo['getstat']['path']:
                 # set the total ammount of "stops" along the way 
                 totalLine = len(dictOne['getstat']['path'])
                 if len(dictTwo['getstat']['path']) > totalLine:
-                    totalLine = len(dictOne['getstat']['path'])
-                
+                    totalLine = len(dictTwo['getstat']['path'])
+
                 # determine the longest line for width
                 longest = 0
                 for p in dictOne['getstat']['path']:
+                    if len(p) > longest:
+                        longest = len(p)
+                for p in dictTwo['getstat']['path']:
                     if len(p) > longest:
                         longest = len(p)
         
@@ -535,7 +550,7 @@ def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
                     longest += 1
                 
                 # set formatting for later, indent -> line1 -> 6 spaces -> line2
-                frmStr = "%-6s\033[0;33m|\033[0m   %-" + str(longest + 39) + "s%-17s"
+                frmStr = "%-6s\033[0;33m|\033[0m     %-" + str(longest + 39) + "s%-17s"
                 
                 # set the "border wing", leaving space for 6 digit uid wrapped in spaces
                 bordwing = '\033[0;35m' + str('=' * int((longest - 8) / 2)) + '\033[0m'
@@ -549,7 +564,7 @@ def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
 
                 print(frmStr % ("", headOne, headTwo))
        
-                frmStr = "%-6s\033[0;33m|\033[0m   %-" + str(longest + 6) + "s%-6s"
+                frmStr = "%-6s\033[0;33m|\033[0m     %-" + str(longest + 6) + "s%-6s"
                 # loop through path for longest length
                 loopLine = 1 
                 while loopLine <= totalLine:
@@ -566,8 +581,39 @@ def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
                     # spit it out 
                     print(frmStr % ("", left, right))
                     loopLine += 1
+
+            ############## CONNECTION TIME ####################################
+            print('      \033[0;33m|\033[0m')
+            print('      \033[0;33m|---- \033[0;37mLoad Time\033[0m')
+            print('      \033[0;33m|               \033[0;35m+=============+==\033[1;31m ' + one + ' \033[0;35m==+== \033[1;31m' + two + '\033[0;35m ==+\033[0m') 
+
+            frmStr = '%-6s\033[0;33m|\033[0m     %-10s\033[0;35m|\033[0m   %-10s\033[0;35m|\033[0m  %-10s\033[0;35m|\033[0m  %-10s\033[0;35m|\033[0m'
+
+            
+            conOne = dictOne['getstat']['connect'][0]
+            redOne = dictOne['getstat']['redirect'][0]
+            tfbOne = dictOne['getstat']['ttfb'][0]
+            totOne = dictOne['getstat']['total'][0]
+
+            conTwo = dictTwo['getstat']['connect'][0]
+            redTwo = dictTwo['getstat']['redirect'][0]
+            tfbTwo = dictTwo['getstat']['ttfb'][0]
+            totTwo = dictTwo['getstat']['total'][0]
+
+            conDif = str(float(conTwo) - float(conOne))[:9]
+            redDif = str(float(redTwo) - float(redOne))[:9]
+            tfbDif = str(float(tfbTwo) - float(tfbOne))[:9]
+            totDif = str(float(totTwo) - float(totOne))[:9]
+            
+
+            print(frmStr % ("", " Connect", conDif, conOne, conTwo))
+            print(frmStr % ("", "Redirect", redDif, redOne, redTwo))
+            print(frmStr % ("", "    TTFB", tfbDif, tfbOne, tfbTwo))
+            print(frmStr % ("", "   Total", totDif, totOne, totTwo))
+            print('      \033[0;33m|\033[0m               \033[0;35m+=============+============+============+\033[0m')
+
+            print('\n')
         
-                print('\n')
         if display == 'dnsrqst':  
             # loops through A, CNAME, NS etc.
             for rectype in dictOne['dnsrqst'].keys():
@@ -634,7 +680,6 @@ def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
                     # print subsection head
                     print('      \033[0;33m|\033[0m')
                     print('      \033[0;33m|----\033[0m \033[0;36m' + pcol[pagereq] + pagereq + pcol['end'] + '\033[0m')
-                    print('      \033[0;33m|\033[0m')
 
                 for request in preq:
                     if request in dictOne['pagereq'][pagereq] and request not in dictTwo['pagereq'][pagereq]:
@@ -645,7 +690,67 @@ def __diff(one, two, popts = ['getstat', 'dnsrqst', 'pagereq', 'openssl']):
 
         if display == 'openssl':
             if dictOne['openssl']['serial'] != dictTwo['openssl']['serial']:
-                print('  \033[0;35m==)\033[0m SSL Information')
+                print('  \033[0;35m==) \033[0;33m+-\033[0m SSL Information')
+                    
+                if dictOne['openssl']['issuer'] != dictTwo['openssl']['issuer']:
+                    print('      \033[0;33m|\033[0m')
+                    print('      \033[0;33m|----\033[0m \033[0;37mIssuer\033[0m')
+                    print('      \033[0;33m|\033[0m     \033[0;31m- ' + dictOne['openssl']['issuer'][0])
+                    print('      \033[0;33m|\033[0m     \033[0;32m+ ' + dictTwo['openssl']['issuer'][0])
+
+                if dictOne['openssl']['subject'] != dictTwo['openssl']['subject']:
+                    print('      \033[0;33m|\033[0m')
+                    print('      \033[0;33m|----\033[0m \033[0;37mSubject\033[0m')
+                    print('      \033[0;33m|\033[0m     \033[0;31m- ' + dictOne['openssl']['subject'][0])
+                    print('      \033[0;33m|\033[0m     \033[0;32m+ ' + dictTwo['openssl']['subject'][0])
+
+                # print subsection head
+                print('      \033[0;33m|\033[0m')
+                print('      \033[0;33m|----\033[0m \033[0;37mSerial Number\033[0m')
+                print('      \033[0;33m|\033[0m     \033[0;31m- ' + dictOne['openssl']['serial'][0])
+                print('      \033[0;33m|\033[0m     \033[0;32m+ ' + dictTwo['openssl']['serial'][0])
+
+
+
+                eStartOne = dictOne['openssl']['startdate'][0]
+                eStartTwo = dictTwo['openssl']['startdate'][0]
+                eExpOne   = dictOne['openssl']['expiration'][0]
+                eExpTwo   = dictTwo['openssl']['expiration'][0]
+
+                startDateOne  = datetime.datetime.fromtimestamp(int(eStartOne)).strftime('%Y-%m-%d %H:%M:%S')
+                startDateTwo  = datetime.datetime.fromtimestamp(int(eStartTwo)).strftime('%Y-%m-%d %H:%M:%S')
+                expirationOne = datetime.datetime.fromtimestamp(int(eExpOne)).strftime('%Y-%m-%d %H:%M:%S')
+                expirationTwo = datetime.datetime.fromtimestamp(int(eExpTwo)).strftime('%Y-%m-%d %H:%M:%S')                
+                
+
+                
+                # print subsection head
+                print('      \033[0;33m|\033[0m')
+                print('      \033[0;33m|----\033[0m \033[0;37mCert Dates\033[0m')
+                print('      \033[0;33m|\033[0;35m             +===== \033[0mStart Date\033[0;35m ====+===== \033[0mExpiration\033[0;35m ====+\033[0m')
+                print('      \033[0;33m|\033[1;31m      ' + one + ' \033[0;35m|\033[1;37m ' + startDateOne + ' \033[0;35m|\033[1;37m ' + expirationOne + ' \033[0;35m|')
+                print('      \033[0;33m|\033[1;31m      ' + two + ' \033[0;35m|\033[1;37m ' + startDateTwo + ' \033[0;35m|\033[1;37m ' + expirationTwo + ' \033[0;35m|')
+                print('      \033[0;33m|\033[0;35m             +=====================+=====================+\033[0m')
+
+                if dictOne['openssl']['san'] != dictTwo['openssl']['san']:
+                    print('      \033[0;33m|\033[0m')
+                    print('      \033[0;33m|----\033[0m \033[0;37mSANs\033[0m')
+                    
+                    # generate list of present http response codes from dict1
+                    sanlist = []
+                    sanlist.extend(dictOne['openssl']['san'])
+
+                    # append values from dict2 if they don't already exist
+                    for twosan in dictTwo['openssl']['san']:
+                        if twosan not in sanlist:
+                            sanlist.append(twosan) 
+                    
+                    for san in sanlist:
+                        if san in dictOne['openssl']['san'] and san not in dictTwo['openssl']['san']:
+                            print('      \033[0;33m|\033[0m     \033[0;31m- ' + san + '\033[0m')
+                        if san in dictTwo['openssl']['san'] and san not in dictOne['openssl']['san']:
+                            print('      \033[0;33m|\033[0m     \033[0;32m+ ' + san + '\033[0m')
+                    print('\n')
 
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
                                     prefix_chars='-',
