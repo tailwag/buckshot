@@ -30,7 +30,7 @@ This project is licensed under the GPL v2 - see the [LICENSE.txt](LICENSE.txt) f
 A few examples of some of the functionality:
 
 
-Running a full test::
+Running a full test
     [2009][user@host ~]$ buckshot github.com
     bd20c3 - 2019-04-10 20:11:26 - github.com
       ==) Connection Statistics:
