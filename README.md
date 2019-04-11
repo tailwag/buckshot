@@ -30,7 +30,40 @@ This project is licensed under the GPL v2 - see the [LICENSE.txt](LICENSE.txt) f
 A few examples of some of the functionality:
 
 
-Running a full test::
+The help menu:
+
+     [2014][essex proudmoore ~]$ buckshot -h
+     usage: buckshot [-h] [-c] [-d] [-p] [-s] [-q] [-l [LINES]] [-L UID] [-D TEST]
+                     [domain]
+     
+     buckshot
+            Bulk (shotgun) troubleshooting for websites with historical data.
+            Devin Shoemaker - 2019
+     
+     positional arguments:
+       domain                address to test
+     
+     optional arguments:
+       -h, --help            show this help message and exit
+       -c, --connection      view connection statistics
+       -d, --dns             view DNS records
+       -p, --page-requisites
+                             view status of all page requisites (elements)
+       -s, --ssl             view summary of SSL certificate status
+       -q, --quiet           write only, no output
+                             
+       -l [LINES], --list [LINES]
+                             view a summary of all archived reports available
+                             
+       -L UID, --log UID     view archived report from log <uid>
+                             
+       -D TEST, --diff TEST  compare results from two tests
+                                 buckshot -D af30d2 e9a00d
+                                 buckshot -D af30d2 domain.com
+
+
+
+Running a full test:
 
      [2009][user@host ~]$ buckshot github.com
      bd20c3 - 2019-04-10 20:11:26 - github.com
@@ -95,102 +128,102 @@ Running a full test::
          Serial     :  0a:06:30:42:7f:5b:bc:ed:69:57:39:65:93:b6:45:1f
 
 Running a test on github.com, displaying connection stats, and comparing that test to a new test:
-``[0359][user@host ~]$ buckshot -c github.com
-704b52 - 2019-04-10 20:08:50 - github.com
-  ==) Connection Statistics:
-    Path       :  HTTP/1.1 301 Moved Permanently
-               :  Location: https://github.com
-               :  HTTP/1.1 200 OK
-    Address    :  192.30.253.113
-    Connect    :  0.083018
-    Redirect   :  0.083881
-    Ttfb       :  0.277915
-    Total      :  0.352950
-    Full       :  1.4s
 
-
-[2008][user@host ~]$ buckshot -cD 704b52 https://github.com
-704b52 - 2019-04-10 20:08:50 - github.com                --> 26dee6 - 2019-04-10 20:09:24 - https://github.com       
-
-  ==) +- Connection Stats
-      |
-      |---- Address
-      |     - 192.30.253.113
-      |     + 192.30.253.112
-      |
-      |---- Redirect Path
-      |     =========== 704b52 ===========      =========== 26dee6 ===========
-      |     HTTP/1.1 301 Moved Permanently      HTTP/1.1 200 OK
-      |     Location: https://github.com              
-      |     HTTP/1.1 200 OK                           
-      |
-      |---- Load Time
-      |               +=============+== 704b52 ==+== 26dee6 ==+
-      |      Connect  |   -0.041412 |  0.083018  |  0.041606  |
-      |     Redirect  |   -0.083881 |  0.083881  |  0.000000  |
-      |         TTFB  |   -0.080498 |  0.277915  |  0.197417  |
-      |        Total  |   -0.080612 |  0.352950  |  0.272337  |
-      |               +=============+============+============+
-``
+     [0359][user@host ~]$ buckshot -c github.com
+     704b52 - 2019-04-10 20:08:50 - github.com
+       ==) Connection Statistics:
+         Path       :  HTTP/1.1 301 Moved Permanently
+                    :  Location: https://github.com
+                    :  HTTP/1.1 200 OK
+         Address    :  192.30.253.113
+         Connect    :  0.083018
+         Redirect   :  0.083881
+         Ttfb       :  0.277915
+         Total      :  0.352950
+         Full       :  1.4s
+     
+     
+     [2008][user@host ~]$ buckshot -cD 704b52 https://github.com
+     704b52 - 2019-04-10 20:08:50 - github.com                --> 26dee6 - 2019-04-10 20:09:24 - https://github.com       
+     
+       ==) +- Connection Stats
+           |
+           |---- Address
+           |     - 192.30.253.113
+           |     + 192.30.253.112
+           |
+           |---- Redirect Path
+           |     =========== 704b52 ===========      =========== 26dee6 ===========
+           |     HTTP/1.1 301 Moved Permanently      HTTP/1.1 200 OK
+           |     Location: https://github.com              
+           |     HTTP/1.1 200 OK                           
+           |
+           |---- Load Time
+           |               +=============+== 704b52 ==+== 26dee6 ==+
+           |      Connect  |   -0.041412 |  0.083018  |  0.041606  |
+           |     Redirect  |   -0.083881 |  0.083881  |  0.000000  |
+           |         TTFB  |   -0.080498 |  0.277915  |  0.197417  |
+           |        Total  |   -0.080612 |  0.352950  |  0.272337  |
+           |               +=============+============+============+
 
 
 Displaying previous tests:
-``[2013][user@host ~]$ buckshot -l 4
-    247 tests found, displaying last 4
-)================================================================================================================
- 704b52 - 2019-04-10 20:08:50 - github.com         - 192.30.253.113 - Load: 1.4s -   Valid SSL -  10 req    1 err
- 26dee6 - 2019-04-10 20:09:24 - https://github.com - 192.30.253.112 - Load: 1.1s -   Valid SSL -  10 req    1 err
- bd20c3 - 2019-04-10 20:11:26 - github.com         - 192.30.253.112 - Load: 1.1s -   Valid SSL -  10 req    1 err
- 11a179 - 2019-04-10 20:13:12 - www.github.com     - 192.30.253.113 - Load: 0.8s -   Valid SSL -   2 req    0 err
-``
+
+     [2013][user@host ~]$ buckshot -l 4
+         247 tests found, displaying last 4
+     )================================================================================================================
+      704b52 - 2019-04-10 20:08:50 - github.com         - 192.30.253.113 - Load: 1.4s -   Valid SSL -  10 req    1 err
+      26dee6 - 2019-04-10 20:09:24 - https://github.com - 192.30.253.112 - Load: 1.1s -   Valid SSL -  10 req    1 err
+      bd20c3 - 2019-04-10 20:11:26 - github.com         - 192.30.253.112 - Load: 1.1s -   Valid SSL -  10 req    1 err
+      11a179 - 2019-04-10 20:13:12 - www.github.com     - 192.30.253.113 - Load: 0.8s -   Valid SSL -   2 req    0 err
 
 
 
-Comparing two previous tests
-``[2013][user@host ~]$ buckshot -D 704b52 11a179        
-704b52 - 2019-04-10 20:08:50 - github.com                --> 11a179 - 2019-04-10 20:13:12 - www.github.com           
+Comparing two previous tests:
 
-  ==) +- Connection Stats
-      |
-      |---- Redirect Path
-      |     ============ 704b52 ============      ============ 11a179 ============
-      |     HTTP/1.1 301 Moved Permanently        HTTP/1.1 301 Moved Permanently
-      |     Location: https://github.com          Location: https://www.github.com
-      |     HTTP/1.1 200 OK                       HTTP/1.1 301 Moved Permanently
-      |                                           Location: https://github.com
-      |                                           HTTP/1.1 200 OK
-      |
-      |---- Load Time
-      |               +=============+== 704b52 ==+== 11a179 ==+
-      |      Connect  |   0.040659  |  0.083018  |  0.123677  |
-      |     Redirect  |   0.128807  |  0.083881  |  0.212688  |
-      |         TTFB  |   0.1398499 |  0.277915  |  0.417765  |
-      |        Total  |   0.1396510 |  0.352950  |  0.492601  |
-      |               +=============+============+============+
+     [2013][user@host ~]$ buckshot -D 704b52 11a179        
+     704b52 - 2019-04-10 20:08:50 - github.com                --> 11a179 - 2019-04-10 20:13:12 - www.github.com           
+     
+       ==) +- Connection Stats
+           |
+           |---- Redirect Path
+           |     ============ 704b52 ============      ============ 11a179 ============
+           |     HTTP/1.1 301 Moved Permanently        HTTP/1.1 301 Moved Permanently
+           |     Location: https://github.com          Location: https://www.github.com
+           |     HTTP/1.1 200 OK                       HTTP/1.1 301 Moved Permanently
+           |                                           Location: https://github.com
+           |                                           HTTP/1.1 200 OK
+           |
+           |---- Load Time
+           |               +=============+== 704b52 ==+== 11a179 ==+
+           |      Connect  |   0.040659  |  0.083018  |  0.123677  |
+           |     Redirect  |   0.128807  |  0.083881  |  0.212688  |
+           |         TTFB  |   0.1398499 |  0.277915  |  0.417765  |
+           |        Total  |   0.1396510 |  0.352950  |  0.492601  |
+           |               +=============+============+============+
+     
+     
+       ==) +- DNS Records
+           |
+           |---- CNAME
+           |     + github.com.
+     
+     
+       ==) +- Page Requisites
+           |
+           |---- 200
+           |     - http://github.com/
+           |     - https://github.githubassets.com/robots.txt
+           |     - https://customer-stories-feed.github.com/customer_stories/ariya/hero.jpg
+           |     - https://customer-stories-feed.github.com/customer_stories/freakboy3742/hero.jpg
+           |     - https://customer-stories-feed.github.com/customer_stories/mailchimp/hero.jpg
+           |     - https://customer-stories-feed.github.com/customer_stories/kris-nova/hero.jpg
+           |     - https://customer-stories-feed.github.com/customer_stories/yyx990803/hero.jpg
+           |     - https://customer-stories-feed.github.com/customer_stories/mapbox/hero.jpg
+           |     - https://customer-stories-feed.github.com/customer_stories/jessfraz/hero.jpg
+           |     + https://github.com/
+           |     + https://github.com/robots.txt
+           |
+           |---- 404
+           |     - https://customer-stories-feed.github.com/robots.txt
 
-
-  ==) +- DNS Records
-      |
-      |---- CNAME
-      |     + github.com.
-
-
-  ==) +- Page Requisites
-      |
-      |---- 200
-      |     - http://github.com/
-      |     - https://github.githubassets.com/robots.txt
-      |     - https://customer-stories-feed.github.com/customer_stories/ariya/hero.jpg
-      |     - https://customer-stories-feed.github.com/customer_stories/freakboy3742/hero.jpg
-      |     - https://customer-stories-feed.github.com/customer_stories/mailchimp/hero.jpg
-      |     - https://customer-stories-feed.github.com/customer_stories/kris-nova/hero.jpg
-      |     - https://customer-stories-feed.github.com/customer_stories/yyx990803/hero.jpg
-      |     - https://customer-stories-feed.github.com/customer_stories/mapbox/hero.jpg
-      |     - https://customer-stories-feed.github.com/customer_stories/jessfraz/hero.jpg
-      |     + https://github.com/
-      |     + https://github.com/robots.txt
-      |
-      |---- 404
-      |     - https://customer-stories-feed.github.com/robots.txt
-
-``
