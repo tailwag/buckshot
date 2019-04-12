@@ -32,7 +32,7 @@ A few examples of some of the functionality:
 
 The help menu:
 
-     [2014][essex proudmoore ~]$ buckshot -h
+     [2014][user host ~]$ buckshot -h
      usage: buckshot [-h] [-c] [-d] [-p] [-s] [-q] [-l [LINES]] [-L UID] [-D TEST]
                      [domain]
      
